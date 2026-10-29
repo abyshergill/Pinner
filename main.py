@@ -1,15 +1,7 @@
-"""
-Modern Path Manager - A desktop application for managing folder and file paths
-"""
+"""Pinner - entry point.  Run with:  python main.py"""
+import sys
 
-from pathmanagerapp import PathManagerApp
-
-
-def main():
-    """Main entry point"""
-    app = PathManagerApp()
-    app.mainloop()
-
+from pinner.app import run
 
 if __name__ == "__main__":
-    main()
+    sys.exit(run())
