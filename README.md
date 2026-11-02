@@ -89,8 +89,8 @@ Then in the browser: *Import bookmarks* → *Bookmarks HTML file* → choose the
 
 ### 1. Fork and clone
 ```bash
-git clone https://github.com/<your-username>/<your-fork>.git
-cd <your-fork>
+git clone hhttps://github.com/abyshergill/Pinner.git
+cd Pinner
 ```
 
 ### 2. Create a virtual environment
