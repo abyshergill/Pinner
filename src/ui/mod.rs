@@ -159,14 +159,15 @@ impl eframe::App for PinnerApp {
 
 /// Start the desktop application.
 pub fn run(repo: Repository) -> eframe::Result {
-    let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
+    let mut viewport = egui::ViewportBuilder::default()
             .with_title(APP_NAME)
             .with_inner_size([980.0, 680.0])
             .with_min_inner_size([700.0, 480.0])
-            .with_drag_and_drop(true),
-        ..Default::default()
-    };
+            .with_drag_and_drop(true);
+    if let Some(icon) = icons::app_icon(256) {
+        viewport = viewport.with_icon(icon);
+    }
+    let options = eframe::NativeOptions { viewport, ..Default::default() };
     eframe::run_native(APP_NAME, options, Box::new(|cc| {
         egui_extras::install_image_loaders(&cc.egui_ctx);
         theme::apply(&cc.egui_ctx);

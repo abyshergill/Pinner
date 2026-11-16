@@ -39,3 +39,25 @@ pub fn primary_button(name: &str, text: &str) -> egui::Button<'static> {
     egui::Button::image_and_text(image(name, 14.0).tint(Color32::WHITE), egui::RichText::new(text).color(Color32::WHITE))
         .fill(ACCENT)
 }
+
+/// The application icon rendered from `assets/icons/app.svg` for the window / Dock.
+pub fn app_icon(size: u32) -> Option<egui::IconData> {
+    use resvg::usvg::TreeParsing;
+    use resvg::{tiny_skia, usvg};
+    let svg = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/icons/app.svg"));
+    let tree = usvg::Tree::from_data(svg, &usvg::Options::default()).ok()?;
+    let mut pixmap = tiny_skia::Pixmap::new(size, size)?;
+    let scale = size as f32 / tree.size.width();
+    resvg::Tree::from_usvg(&tree).render(tiny_skia::Transform::from_scale(scale, scale), &mut pixmap.as_mut());
+    // tiny-skia stores premultiplied alpha; egui wants straight RGBA.
+    let mut rgba = pixmap.take();
+    for px in rgba.chunks_exact_mut(4) {
+        let a = px[3] as u32;
+        if a > 0 && a < 255 {
+            for c in &mut px[..3] {
+                *c = ((*c as u32 * 255 + a / 2) / a).min(255) as u8;
+            }
+        }
+    }
+    Some(egui::IconData { rgba, width: size, height: size })
+}
