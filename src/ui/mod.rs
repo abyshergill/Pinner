@@ -37,6 +37,7 @@ pub struct PinnerApp {
     browser: SectionView,
     panel: PinnerPanel,
     stay_on_top: bool,
+    theme: theme::Mode,
     status: Status,
     on_top_applied: bool,
 }
@@ -46,6 +47,7 @@ impl PinnerApp {
         let mut pinner = WindowPinner::new(&[APP_NAME]);
         pinner.keep_pinned_on_exit = repo.get_bool(SETTING_KEEP_PINS, false); // default: unchecked
         let stay_on_top = repo.get_bool(SETTING_SELF_ON_TOP, false);
+        let theme = theme::Mode::parse(repo.get_setting(theme::SETTING_THEME).ok().flatten().as_deref());
         Self {
             repo,
             launcher: Launcher::new(),
@@ -55,6 +57,7 @@ impl PinnerApp {
             browser: SectionView::new(Section::Browser),
             panel: PinnerPanel::new(),
             stay_on_top,
+            theme,
             status: Status::default(),
             on_top_applied: false,
         }
@@ -80,12 +83,23 @@ impl eframe::App for PinnerApp {
         }
 
         egui::TopBottomPanel::top("header")
-            .frame(egui::Frame::none().fill(ctx.style().visuals.panel_fill).inner_margin(egui::Margin::symmetric(18.0, 12.0)))
+            .frame(
+                egui::Frame::none()
+                    .fill(theme::surface(&ctx.style().visuals))
+                    .stroke(egui::Stroke::new(1.0_f32, ctx.style().visuals.widgets.noninteractive.bg_stroke.color))
+                    .inner_margin(egui::Margin::symmetric(18.0, 12.0)),
+            )
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.add(icons::image("app", 34.0));
                     ui.heading(APP_NAME);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let tip = self.theme.label();
+                        if ui.add(icons::button(ui, self.theme.icon(), "")).on_hover_text(format!("{tip} (click to change)")).clicked() {
+                            self.theme = self.theme.next();
+                            self.theme.apply(ctx);
+                            let _ = self.repo.set_setting(theme::SETTING_THEME, self.theme.as_str());
+                        }
                         if ui.checkbox(&mut self.stay_on_top, format!("Keep {APP_NAME} always on top")).changed() {
                             self.apply_stay_on_top(ctx);
                             let _ = self.repo.set_bool(SETTING_SELF_ON_TOP, self.stay_on_top);
@@ -102,7 +116,12 @@ impl eframe::App for PinnerApp {
                         (Tab::About, "github", "About"),
                     ] {
                         let active = self.tab == tab;
-                        let image = if active { icons::image(icon, 16.0).tint(egui::Color32::WHITE) } else { icons::mono(ui, icon, 16.0) };
+                        let coloured = matches!(icon, "folder" | "url");
+                        let image = match (active, coloured) {
+                            (true, false) => icons::image(icon, 16.0).tint(egui::Color32::WHITE),
+                            (false, false) => icons::mono(ui, icon, 16.0),
+                            (_, true) => icons::image(icon, 16.0),
+                        };
                         let text = if active {
                             egui::RichText::new(label).strong().color(egui::Color32::WHITE)
                         } else {
@@ -124,7 +143,12 @@ impl eframe::App for PinnerApp {
                 });
             });
 
-        egui::TopBottomPanel::bottom("status").frame(egui::Frame::none().fill(ctx.style().visuals.panel_fill).inner_margin(egui::Margin::symmetric(18.0, 6.0))).show(ctx, |ui| {
+        egui::TopBottomPanel::bottom("status").frame(
+            egui::Frame::none()
+                .fill(theme::surface(&ctx.style().visuals))
+                .stroke(egui::Stroke::new(1.0_f32, ctx.style().visuals.widgets.noninteractive.bg_stroke.color))
+                .inner_margin(egui::Margin::symmetric(18.0, 6.0)),
+        ).show(ctx, |ui| {
             ui.weak(if self.status.0.is_empty() { "Ready" } else { self.status.0.as_str() });
         });
 
@@ -171,6 +195,8 @@ pub fn run(repo: Repository) -> eframe::Result {
     eframe::run_native(APP_NAME, options, Box::new(|cc| {
         egui_extras::install_image_loaders(&cc.egui_ctx);
         theme::apply(&cc.egui_ctx);
-        Ok(Box::new(PinnerApp::new(repo)))
+        let app = PinnerApp::new(repo);
+        app.theme.apply(&cc.egui_ctx);
+        Ok(Box::new(app))
     }))
 }

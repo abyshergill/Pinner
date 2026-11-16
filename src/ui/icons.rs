@@ -15,7 +15,7 @@ fn source(name: &str) -> ImageSource<'static> {
     }
     icons!(
         "app", "folder", "file", "url", "group_paths", "group_browser", "window_pin", "plus", "play",
-        "import", "export", "refresh", "search", "star", "close", "trash", "folder_plus", "github",
+        "import", "export", "refresh", "search", "star", "close", "trash", "folder_plus", "github", "sun", "moon", "monitor",
     )
 }
 
