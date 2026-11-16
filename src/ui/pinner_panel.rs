@@ -2,6 +2,7 @@
 
 use eframe::egui;
 
+use super::icons;
 use pinner::window_pinner::{Hwnd, WindowInfo, WindowPinner};
 
 pub struct PinnerPanel {
@@ -60,7 +61,7 @@ impl PinnerPanel {
                     ui.selectable_value(&mut self.chosen, Some(w.hwnd), truncate(&w.title, 80));
                 }
             });
-            if ui.button("⟳ Refresh").clicked() {
+            if ui.add(icons::button(ui, "refresh", "Refresh")).clicked() {
                 self.load(pinner);
             }
         });
@@ -73,7 +74,7 @@ impl PinnerPanel {
                     ui.selectable_value(&mut self.priority, p, p.to_string());
                 }
             });
-            if ui.add_enabled(self.chosen.is_some(), egui::Button::new("📌 Pin on Top")).clicked() {
+            if ui.add_enabled(self.chosen.is_some(), icons::primary_button("window_pin", "Pin on Top")).clicked() {
                 if let Some(w) = self.windows.iter().find(|w| Some(w.hwnd) == self.chosen).cloned() {
                     self.error = pinner.pin(w.hwnd, &w.title, self.priority, w.is_topmost).err().map(|e| e.to_string());
                 }

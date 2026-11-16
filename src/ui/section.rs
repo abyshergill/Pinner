@@ -12,11 +12,14 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-use eframe::egui::{self, Align, Layout, RichText};
+use eframe::egui::{self, Align, Color32, Layout, RichText, Sense, UiBuilder};
+use eframe::egui::collapsing_header::CollapsingState;
 
 use pinner::launcher::Launcher;
 use pinner::models::{allowed_kinds, Group, Item, ItemKind, Section};
 use pinner::repository::Repository;
+
+use super::icons::{self, ACCENT};
 use pinner::{bookmarks, dropped};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -80,9 +83,9 @@ pub struct SectionView {
 
 fn kind_icon(kind: ItemKind) -> &'static str {
     match kind {
-        ItemKind::Folder => "📁",
-        ItemKind::File => "📄",
-        ItemKind::Url => "🔗",
+        ItemKind::Folder => "folder",
+        ItemKind::File => "file",
+        ItemKind::Url => "url",
     }
 }
 
@@ -123,6 +126,10 @@ impl SectionView {
             Some(Sel::Item(i)) if self.find_item(i).is_none() => None,
             s => s,
         };
+        if self.selected.is_none() {
+            // keep "Add" usable: start with the first top-level folder selected
+            self.selected = self.children_of(None).next().map(|g| Sel::Group(g.id));
+        }
         self.dirty = false;
     }
 
@@ -186,34 +193,34 @@ impl SectionView {
         let modal_open = self.modal.is_some();
 
         let hint = if self.links_only() {
-            "Bookmarks hold web links only - files and folders can't be added here.\n\
-             Tip: use Import / Export to share bookmarks with Chrome, Edge, Firefox or Safari."
+            "Bookmarks hold web links only. Use Import / Export to share them with Chrome, Edge, Firefox or Safari."
         } else {
-            "Create a folder (e.g. one per customer), add sub-folders, then pin folders, files and links inside.\n\
-             Tip: drag files or folders from your file manager onto this window."
+            "Create a folder (e.g. one per customer), then pin folders, files and links inside. Drop files onto this window to add them."
         };
-        ui.weak(hint);
-        ui.add_space(4.0);
+        ui.add(egui::Label::new(RichText::new(hint).weak()).wrap());
+        ui.add_space(2.0);
 
+        let target_group = self.current_group_id();
         ui.horizontal_wrapped(|ui| {
-            ui.add(egui::TextEdit::singleline(&mut self.search).hint_text("🔍 Search name or location").desired_width(240.0));
-            if !self.search.is_empty() && ui.button("✖").on_hover_text("Clear search").clicked() {
+            ui.add(icons::mono(ui, "search", 16.0));
+            ui.add(egui::TextEdit::singleline(&mut self.search).hint_text("Search name or location").desired_width(230.0));
+            if !self.search.is_empty() && ui.add(icons::button(ui, "close", "")).on_hover_text("Clear search").clicked() {
                 self.search.clear();
             }
-            ui.separator();
-            if ui.button("📁 New folder").clicked() {
+            ui.add_space(6.0);
+            if ui.add(icons::button(ui, "folder_plus", "New folder")).clicked() {
                 acts.push(Act::NewGroup(None));
             }
-            let target_group = self.current_group_id();
             ui.add_enabled_ui(target_group.is_some(), |ui| {
                 if self.links_only() {
-                    if ui.button("＋ Link").on_hover_text("Add a web link to the selected folder").clicked() {
+                    if ui.add(icons::primary_button("plus", "Link")).on_hover_text("Add a web link to the selected folder").clicked() {
                         acts.push(Act::AddItem(target_group.unwrap(), ItemKind::Url));
                     }
                 } else {
-                    ui.menu_button("＋ Add ▾", |ui| {
+                    ui.menu_button("Add", |ui| {
                         for &kind in allowed_kinds(self.section) {
-                            if ui.button(format!("{} {}", kind_icon(kind), add_label(kind))).clicked() {
+                            let b = egui::Button::image_and_text(icons::image(kind_icon(kind), 16.0), add_label(kind));
+                            if ui.add(b).clicked() {
                                 acts.push(Act::AddItem(target_group.unwrap(), kind));
                                 ui.close_menu();
                             }
@@ -224,36 +231,35 @@ impl SectionView {
                 }
             });
             let selected_item = matches!(self.selected, Some(Sel::Item(_)));
-            if ui.add_enabled(selected_item, egui::Button::new("▶ Open")).clicked() {
+            if ui.add_enabled(selected_item, icons::button(ui, "play", "Open")).clicked() {
                 if let Some(Sel::Item(i)) = self.selected {
                     acts.push(Act::Open(i));
                 }
             }
             if self.links_only() {
-                ui.separator();
                 let into = match self.selected {
                     Some(Sel::Group(g)) => Some(g),
                     _ => None,
                 };
-                if ui.button("⬇ Import…").on_hover_text("Import a browser bookmarks file").clicked() {
+                if ui.add(icons::button(ui, "import", "Import")).on_hover_text("Import a browser bookmarks file").clicked() {
                     acts.push(Act::Import(into));
                 }
-                if ui.button("⬆ Export…").on_hover_text("Export bookmarks as an HTML file").clicked() {
+                if ui.add(icons::button(ui, "export", "Export")).on_hover_text("Export bookmarks as an HTML file").clicked() {
                     acts.push(Act::Export(None));
                 }
             }
         });
-        ui.separator();
+        ui.add_space(4.0);
 
         let needle = self.search.trim().to_lowercase();
         let visible = self.visible_groups(&needle);
 
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             if self.groups.is_empty() {
-                ui.weak("No folders yet - click “New folder”.");
+                empty_state(ui, "No folders yet", "Click “New folder” to create your first one.");
             }
             if visible.as_ref().is_some_and(|v| v.is_empty()) {
-                ui.weak("Nothing matches your search.");
+                empty_state(ui, "Nothing found", "Nothing matches your search.");
             }
             let roots: Vec<Group> = self.children_of(None).cloned().collect();
             for g in &roots {
@@ -322,44 +328,52 @@ impl SectionView {
             return;
         }
         let selected = self.selected == Some(Sel::Group(group.id));
-        let title = RichText::new(format!("📂 {}", group.name)).strong();
-        let title = if selected { title.underline() } else { title };
-        let mut header = egui::CollapsingHeader::new(title)
-            .id_salt(("group", group.id))
-            .default_open(true);
+        let id = ui.make_persistent_id(("group", group.id));
+        let mut state = CollapsingState::load_with_default_open(ui.ctx(), id, true);
         if visible.is_some() {
-            header = header.open(Some(true));
+            state.set_open(true);
         }
-        let resp = header.show(ui, |ui| {
-            let subs: Vec<Group> = self.children_of(Some(group.id)).cloned().collect();
-            for sub in &subs {
-                self.group_ui(ui, sub, needle, visible, acts);
-            }
-            for item in self.items.get(&group.id).into_iter().flatten() {
-                if needle.is_empty() || matches(item, needle) {
-                    self.item_ui(ui, item, acts);
+        let icon = if self.links_only() { "group_browser" } else { "group_paths" };
+        let count = self.items.get(&group.id).map_or(0, |v| v.len());
+        let (_toggle, header, _body) = state
+            .show_header(ui, |ui| {
+                ui.add(icons::image(icon, 20.0));
+                let label = ui.selectable_label(selected, RichText::new(&group.name).strong().size(15.5));
+                if count > 0 {
+                    ui.weak(format!("{count}"));
                 }
-            }
-        });
-        let head = resp.header_response;
+                label
+            })
+            .body(|ui| {
+                let subs: Vec<Group> = self.children_of(Some(group.id)).cloned().collect();
+                for sub in &subs {
+                    self.group_ui(ui, sub, needle, visible, acts);
+                }
+                for item in self.items.get(&group.id).into_iter().flatten() {
+                    if needle.is_empty() || matches(item, needle) {
+                        self.item_ui(ui, item, acts);
+                    }
+                }
+            });
+        let head = header.inner;
         if head.clicked() {
             acts.push(Act::Select(Sel::Group(group.id)));
         }
         head.context_menu(|ui| {
             acts.push(Act::Select(Sel::Group(group.id)));
-            if ui.button("📁 New sub-folder").clicked() {
+            if ui.add(icons::button(ui, "folder_plus", "New sub-folder")).clicked() {
                 acts.push(Act::NewGroup(Some(group.id)));
                 ui.close_menu();
             }
             if self.links_only() {
-                if ui.button("🔗 Add link…").clicked() {
+                if ui.add(icons::button(ui, "url", "Add link…")).clicked() {
                     acts.push(Act::AddItem(group.id, ItemKind::Url));
                     ui.close_menu();
                 }
             } else {
                 ui.menu_button("＋ Add", |ui| {
                     for &kind in allowed_kinds(self.section) {
-                        if ui.button(format!("{} {}", kind_icon(kind), add_label(kind))).clicked() {
+                        if ui.add(egui::Button::image_and_text(icons::image(kind_icon(kind), 16.0), add_label(kind))).clicked() {
                             acts.push(Act::AddItem(group.id, kind));
                             ui.close_menu();
                         }
@@ -390,16 +404,47 @@ impl SectionView {
 
     fn item_ui(&self, ui: &mut egui::Ui, item: &Item, acts: &mut Vec<Act>) {
         let selected = self.selected == Some(Sel::Item(item.id));
-        ui.horizontal(|ui| {
-            let star = if item.is_pinned { "★ " } else { "" };
-            let label = format!("{} {star}{}", kind_icon(item.kind), item.name);
-            let resp = ui.selectable_label(selected, label).on_hover_text(&item.target);
-            ui.weak(shorten(&item.target, 70));
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui.button(RichText::new("Open").color(egui::Color32::from_rgb(40, 160, 80))).clicked() {
-                    acts.push(Act::Open(item.id));
+        let width = ui.available_width().max(200.0);
+        let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, 46.0), Sense::click());
+        let resp = resp.on_hover_text(&item.target);
+        let fill = if selected {
+            ACCENT.linear_multiply(0.22)
+        } else if resp.hovered() {
+            ui.visuals().widgets.hovered.weak_bg_fill
+        } else {
+            ui.visuals().faint_bg_color
+        };
+        let stroke = if selected { egui::Stroke::new(1.0_f32, ACCENT) } else { ui.visuals().widgets.noninteractive.bg_stroke };
+        ui.painter().rect(rect, 8.0, fill, stroke);
+
+        let inner = rect.shrink2(egui::vec2(10.0, 4.0));
+        let button_w = 84.0;
+        let mut left = ui.new_child(
+            UiBuilder::new()
+                .max_rect(egui::Rect::from_min_max(inner.min, egui::pos2(inner.max.x - button_w - 8.0, inner.max.y)))
+                .layout(Layout::left_to_right(Align::Center)),
+        );
+        left.add(icons::image(kind_icon(item.kind), 24.0));
+        left.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = 1.0;
+            ui.horizontal(|ui| {
+                ui.add(egui::Label::new(RichText::new(&item.name).strong()).truncate());
+                if item.is_pinned {
+                    ui.add(icons::image("star", 13.0).tint(Color32::from_rgb(245, 185, 66)));
                 }
             });
+            ui.add(egui::Label::new(RichText::new(shorten(&item.target, 90)).small().weak()).truncate());
+        });
+        let mut right = ui.new_child(
+            UiBuilder::new()
+                .max_rect(egui::Rect::from_min_max(egui::pos2(inner.max.x - button_w, inner.min.y), inner.max))
+                .layout(Layout::right_to_left(Align::Center)),
+        );
+        if right.add(icons::primary_button("play", "Open")).clicked() {
+            acts.push(Act::Open(item.id));
+        }
+        ui.add_space(2.0);
+        {
             if resp.clicked() {
                 acts.push(Act::Select(Sel::Item(item.id)));
             }
@@ -408,7 +453,7 @@ impl SectionView {
             }
             resp.context_menu(|ui| {
                 acts.push(Act::Select(Sel::Item(item.id)));
-                if ui.button(format!("{} Open", kind_icon(item.kind))).clicked() {
+                if ui.add(icons::button(ui, "play", "Open")).clicked() {
                     acts.push(Act::Open(item.id));
                     ui.close_menu();
                 }
@@ -444,7 +489,7 @@ impl SectionView {
                     ui.close_menu();
                 }
             });
-        });
+        }
     }
 
     // ------------------------------------------------------------ actions
@@ -745,6 +790,16 @@ thread_local! {
 /// Text queued by "Copy path / link"; the app copies it to the clipboard.
 pub fn take_copy_request() -> Option<String> {
     COPY_PENDING.with(|c| c.borrow_mut().take())
+}
+
+fn empty_state(ui: &mut egui::Ui, title: &str, text: &str) {
+    ui.add_space(40.0);
+    ui.vertical_centered(|ui| {
+        ui.add(icons::image("folder", 48.0));
+        ui.add_space(6.0);
+        ui.label(RichText::new(title).heading());
+        ui.weak(text);
+    });
 }
 
 fn window(ctx: &egui::Context, title: &str) -> egui::Window<'static> {

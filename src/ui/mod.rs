@@ -1,7 +1,9 @@
 //! The egui front end: header, tabs and the three tab views.
 
+mod icons;
 mod pinner_panel;
 mod section;
+mod theme;
 
 use eframe::egui;
 
@@ -75,34 +77,55 @@ impl eframe::App for PinnerApp {
             }
         }
 
-        egui::TopBottomPanel::top("header").show(ctx, |ui| {
-            ui.add_space(6.0);
-            ui.horizontal(|ui| {
-                ui.heading(format!("📁 {APP_NAME}"));
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.checkbox(&mut self.stay_on_top, format!("Keep {APP_NAME} always on top")).changed() {
-                        self.apply_stay_on_top(ctx);
-                        let _ = self.repo.set_bool(SETTING_SELF_ON_TOP, self.stay_on_top);
+        egui::TopBottomPanel::top("header")
+            .frame(egui::Frame::none().fill(ctx.style().visuals.panel_fill).inner_margin(egui::Margin::symmetric(18.0, 12.0)))
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.add(icons::image("app", 34.0));
+                    ui.heading(APP_NAME);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.checkbox(&mut self.stay_on_top, format!("Keep {APP_NAME} always on top")).changed() {
+                            self.apply_stay_on_top(ctx);
+                            let _ = self.repo.set_bool(SETTING_SELF_ON_TOP, self.stay_on_top);
+                        }
+                    });
+                });
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    let before = self.tab;
+                    for (tab, icon, label) in [
+                        (Tab::Paths, "folder", "Paths"),
+                        (Tab::Browser, "url", "Browser Bookmarks"),
+                        (Tab::OnTop, "window_pin", "Always on Top"),
+                    ] {
+                        let active = self.tab == tab;
+                        let image = if active { icons::image(icon, 16.0).tint(egui::Color32::WHITE) } else { icons::mono(ui, icon, 16.0) };
+                        let text = if active {
+                            egui::RichText::new(label).strong().color(egui::Color32::WHITE)
+                        } else {
+                            egui::RichText::new(label)
+                        };
+                        let mut b = egui::Button::image_and_text(image, text).min_size(egui::vec2(0.0, 32.0));
+                        if active {
+                            b = b.fill(icons::ACCENT);
+                        } else {
+                            b = b.frame(false);
+                        }
+                        if ui.add(b).clicked() {
+                            self.tab = tab;
+                        }
+                    }
+                    if before != self.tab && self.tab == Tab::OnTop {
+                        self.panel.invalidate();
                     }
                 });
             });
-            ui.horizontal(|ui| {
-                let before = self.tab;
-                ui.selectable_value(&mut self.tab, Tab::Paths, "📁 Paths");
-                ui.selectable_value(&mut self.tab, Tab::Browser, "🔗 Browser Bookmarks");
-                ui.selectable_value(&mut self.tab, Tab::OnTop, "📌 Always on Top");
-                if before != self.tab && self.tab == Tab::OnTop {
-                    self.panel.invalidate();
-                }
-            });
-            ui.add_space(2.0);
-        });
 
-        egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
+        egui::TopBottomPanel::bottom("status").frame(egui::Frame::none().fill(ctx.style().visuals.panel_fill).inner_margin(egui::Margin::symmetric(18.0, 6.0))).show(ctx, |ui| {
             ui.weak(if self.status.0.is_empty() { "Ready" } else { self.status.0.as_str() });
         });
 
-        egui::CentralPanel::default().show(ctx, |ui| match self.tab {
+        egui::CentralPanel::default().frame(egui::Frame::none().fill(ctx.style().visuals.panel_fill).inner_margin(egui::Margin::symmetric(18.0, 4.0))).show(ctx, |ui| match self.tab {
             Tab::Paths => self.paths.ui(ui, &self.repo, &self.launcher, &mut self.status),
             Tab::Browser => self.browser.ui(ui, &self.repo, &self.launcher, &mut self.status),
             Tab::OnTop => {
@@ -134,5 +157,9 @@ pub fn run(repo: Repository) -> eframe::Result {
             .with_drag_and_drop(true),
         ..Default::default()
     };
-    eframe::run_native(APP_NAME, options, Box::new(|_cc| Ok(Box::new(PinnerApp::new(repo)))))
+    eframe::run_native(APP_NAME, options, Box::new(|cc| {
+        egui_extras::install_image_loaders(&cc.egui_ctx);
+        theme::apply(&cc.egui_ctx);
+        Ok(Box::new(PinnerApp::new(repo)))
+    }))
 }
