@@ -128,7 +128,8 @@ impl SectionView {
         };
         if self.selected.is_none() {
             // keep "Add" usable: start with the first top-level folder selected
-            self.selected = self.children_of(None).next().map(|g| Sel::Group(g.id));
+            let first = self.children_of(None).next().map(|g| Sel::Group(g.id));
+            self.selected = first;
         }
         self.dirty = false;
     }
