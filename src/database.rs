@@ -1,12 +1,15 @@
-"""SQLite connection management and schema."""
-from __future__ import annotations
+//! SQLite connection management and schema.
 
-import sqlite3
-from pathlib import Path
+use std::path::Path;
 
-SCHEMA_VERSION = 2
+use rusqlite::Connection;
 
-_SCHEMA = """
+use crate::config::expand_user;
+use crate::models::Result;
+
+pub const SCHEMA_VERSION: i64 = 2;
+
+const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS groups (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     section     TEXT    NOT NULL CHECK (section IN ('paths', 'browser')),
@@ -51,34 +54,32 @@ CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
-"""
+";
 
+/// Thin wrapper owning one SQLite connection.
+pub struct Database {
+    pub conn: Connection,
+}
 
-class Database:
-    """Thin wrapper owning one SQLite connection.
+impl Database {
+    pub fn open(path: impl AsRef<Path>) -> Result<Self> {
+        let raw = path.as_ref().to_string_lossy().to_string();
+        let path = expand_user(&raw);
+        if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| crate::models::Error::Database(format!("Cannot create {}: {e}", parent.display())))?;
+        }
+        Self::init(Connection::open(path)?)
+    }
 
-    ``path=":memory:"`` is supported (used heavily by the tests).
-    """
+    pub fn in_memory() -> Result<Self> {
+        Self::init(Connection::open_in_memory()?)
+    }
 
-    def __init__(self, path: str | Path = ":memory:") -> None:
-        self.path = str(path)
-        if self.path != ":memory:":
-            Path(self.path).expanduser().parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(self.path)
-        self.conn.row_factory = sqlite3.Row
-        self.conn.execute("PRAGMA foreign_keys = ON")
-        self._init_schema()
-
-    def _init_schema(self) -> None:
-        with self.conn:
-            self.conn.executescript(_SCHEMA)
-            self.conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
-
-    def close(self) -> None:
-        self.conn.close()
-
-    def __enter__(self) -> "Database":
-        return self
-
-    def __exit__(self, *exc) -> None:
-        self.close()
+    fn init(conn: Connection) -> Result<Self> {
+        conn.execute_batch("PRAGMA foreign_keys = ON")?;
+        conn.execute_batch(SCHEMA)?;
+        conn.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;
+        Ok(Self { conn })
+    }
+}
