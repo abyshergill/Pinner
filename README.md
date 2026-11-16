@@ -18,6 +18,7 @@ grouped in your own folders (e.g. one per customer or project) and stored in SQL
 | **Open** | Every entry has a green **Open** button on its row, plus **▶ Open** in the toolbar, **Enter** / double-click, and right-click → *Open* / *Show in folder*. Folders open in the file manager, files with their default program, links in your browser. |
 | **Always on Top tab** | Choose a window from a **drop-down**, choose its **priority** from a second drop-down, click *Pin on Top*. Priority 1 stays above all other pinned windows; reorder with ▲/▼. (Windows) |
 | **Pins end with the app** | Closing Pinner (or quitting) un-pins every window it pinned **unless** you tick *Active after the application stop* (unchecked by default; the choice is remembered). Windows that were already always-on-top beforehand are left as they were. |
+| **About tab** | Version, license and links to the author's GitHub profile and the project repository. |
 | **Keep Pinner on top** | Checkbox in the header; remembered between runs (all platforms). |
 | **System theme** | Follows your OS light/dark mode and accent colour; no hard-coded colours or fonts. |
 | **SQLite storage** | `pinner.db` next to the executable (or the project folder when run with `cargo run`); override with `PINNER_DB`. |

@@ -1,5 +1,6 @@
 //! The egui front end: header, tabs and the three tab views.
 
+mod about;
 mod icons;
 mod pinner_panel;
 mod section;
@@ -24,6 +25,7 @@ enum Tab {
     Paths,
     Browser,
     OnTop,
+    About,
 }
 
 pub struct PinnerApp {
@@ -97,6 +99,7 @@ impl eframe::App for PinnerApp {
                         (Tab::Paths, "folder", "Paths"),
                         (Tab::Browser, "url", "Browser Bookmarks"),
                         (Tab::OnTop, "window_pin", "Always on Top"),
+                        (Tab::About, "github", "About"),
                     ] {
                         let active = self.tab == tab;
                         let image = if active { icons::image(icon, 16.0).tint(egui::Color32::WHITE) } else { icons::mono(ui, icon, 16.0) };
@@ -128,6 +131,13 @@ impl eframe::App for PinnerApp {
         egui::CentralPanel::default().frame(egui::Frame::none().fill(ctx.style().visuals.panel_fill).inner_margin(egui::Margin::symmetric(18.0, 4.0))).show(ctx, |ui| match self.tab {
             Tab::Paths => self.paths.ui(ui, &self.repo, &self.launcher, &mut self.status),
             Tab::Browser => self.browser.ui(ui, &self.repo, &self.launcher, &mut self.status),
+            Tab::About => {
+                if let Some(link) = about::ui(ui) {
+                    if let Err(e) = self.launcher.open_url(link) {
+                        self.status.0 = e.to_string();
+                    }
+                }
+            }
             Tab::OnTop => {
                 if let Some(keep) = self.panel.ui(ui, &mut self.pinner) {
                     let _ = self.repo.set_bool(SETTING_KEEP_PINS, keep);
